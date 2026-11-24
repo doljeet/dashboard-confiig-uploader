@@ -18,7 +18,6 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
-#include "cmsis_os2.h"
 #include "fdcan.h"
 #include "gpio.h"
 
@@ -29,6 +28,15 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+#define CAN_ID_REQUEST        0x7F0U
+#define CAN_ID_ECHO           0x7F1U
+#define CAN_ID_HEARTBEAT      0x7F3U
+#define CAN_STD_ID_MAX        0x7FFU
+#define CAN_CLASSIC_MAX_LEN   8U
+#define HEARTBEAT_PERIOD_MS   1000U
+#define LED_BLINK_MS          50U
+#define BYTE_MASK             0xFFU
+#define BITS_PER_BYTE         8U
 
 /* USER CODE END PTD */
 
@@ -45,18 +53,75 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+static volatile uint32_t appl_rxCount = 0U;
+static volatile uint32_t appl_ledOffTick = 0U;
+static uint32_t appl_lastHeartbeatTick = 0U;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
-void MX_FREERTOS_Init(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/*
+ * sends the CAN frame
+ */
+static HAL_StatusTypeDef glue_canSend(uint32_t id, const uint8_t *data, uint32_t length)
+{
+  FDCAN_TxHeaderTypeDef txHeader = {0};
+  txHeader.Identifier = id;
+  txHeader.IdType = FDCAN_STANDARD_ID;
+  txHeader.TxFrameType = FDCAN_DATA_FRAME;
+  txHeader.DataLength = length;
+  txHeader.ErrorStateIndicator = FDCAN_ESI_ACTIVE;
+  txHeader.BitRateSwitch = FDCAN_BRS_OFF;
+  txHeader.FDFormat = FDCAN_CLASSIC_CAN;
+  txHeader.TxEventFifoControl = FDCAN_NO_TX_EVENTS;
+  txHeader.MessageMarker = 0U;
+  return HAL_FDCAN_AddMessageToTxFifoQ(&hfdcan1, &txHeader, data);
+}
+
+/*
+ * stores the 32-bit vlue in the buffer
+ */
+static void util_putU32(uint8_t *buffer, uint32_t value)
+{
+  for (uint32_t i = 0U; i < sizeof(uint32_t); i++)
+  {
+    buffer[i] = (uint8_t)((value >> (i * BITS_PER_BYTE)) & BYTE_MASK);
+  }
+}
+
+/*
+ * flashes the LED and counts the incoming frames
+ */
+void HAL_FDCAN_RxFifo0Callback(FDCAN_HandleTypeDef *hfdcan, uint32_t RxFifo0ITs)
+{
+  FDCAN_RxHeaderTypeDef rxHeader;
+  uint8_t rxData[CAN_CLASSIC_MAX_LEN];
+
+  if ((RxFifo0ITs & FDCAN_IT_RX_FIFO0_NEW_MESSAGE) == 0U)
+  {
+    return;
+  }
+  while (HAL_FDCAN_GetRxFifoFillLevel(hfdcan, FDCAN_RX_FIFO0) > 0U)
+  {
+    if (HAL_FDCAN_GetRxMessage(hfdcan, FDCAN_RX_FIFO0, &rxHeader, rxData) != HAL_OK)
+    {
+      break;
+    }
+    appl_rxCount++;
+    HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_SET);
+    appl_ledOffTick = HAL_GetTick() + LED_BLINK_MS;
+    if (rxHeader.Identifier == CAN_ID_REQUEST)
+    {
+      (void)glue_canSend(CAN_ID_ECHO, rxData, rxHeader.DataLength);
+    }
+  }
+}
 
 /* USER CODE END 0 */
 
@@ -91,18 +156,33 @@ int main(void)
   MX_GPIO_Init();
   MX_FDCAN1_Init();
   /* USER CODE BEGIN 2 */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
+  FDCAN_FilterTypeDef filter = {0};
+    filter.IdType = FDCAN_STANDARD_ID;
+    filter.FilterIndex = 0U;
+    filter.FilterType = FDCAN_FILTER_RANGE;
+    filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
+    filter.FilterID1 = 0x000U;
+    filter.FilterID2 = CAN_STD_ID_MAX;
+    if (HAL_FDCAN_ConfigFilter(&hfdcan1, &filter) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    if (HAL_FDCAN_ConfigGlobalFilter(&hfdcan1, FDCAN_REJECT, FDCAN_REJECT,
+                                     FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0U) != HAL_OK)
+    {
+      Error_Handler();
+    }
+    if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
+    {
+      Error_Handler();
+    }
 
   /* USER CODE END 2 */
-
-  /* Init scheduler */
-  osKernelInitialize();
-  /* Call init function for freertos objects (in app_freertos.c) */
-  MX_FREERTOS_Init();
-
-  /* Start scheduler */
-  osKernelStart();
-
-  /* We should never get here as control is now taken by the scheduler */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */

@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "project": { "name": "HELLO", "revision": 1 },
+  "settings": {
+    "buses": { "ecu": { "bitrate": 500000 }, "tele": { "bitrate": 500000, "data_bitrate": 2000000 } },
+    "default_page": "main"
+  },
+  "signals": [],
+  "pages": [
+    { "id": "main", "name": "Main", "background": "#000000",
+      "widgets": [
+        { "type": "rect", "x": 0, "y": 0, "w": 800, "h": 60, "color": "#2060FF", "radius": 0 },
+        { "type": "text", "x": 20, "y": 15, "w": 400, "h": 40, "text": "PGR-10", "font": 30 },
+        { "type": "text", "x": 300, "y": 220, "w": 200, "h": 40, "text": "Hello CAN", "font": 31, "align": "center" }
+      ] },
+    { "id": "pit", "name": "Pit", "background": "#101010",
+      "widgets": [
+        { "type": "text", "x": 20, "y": 20, "w": 300, "h": 40, "text": "PIT STOP", "font": 30, "color": "#FFC000" }
+      ] }
+  ]
+}

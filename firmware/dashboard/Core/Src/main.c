@@ -28,6 +28,11 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+
+/* USER CODE END PTD */
+
+/* Private define ------------------------------------------------------------*/
+/* USER CODE BEGIN PD */
 #define CAN_ID_REQUEST        0x7F0U
 #define CAN_ID_ECHO           0x7F1U
 #define CAN_ID_HEARTBEAT      0x7F3U
@@ -37,12 +42,6 @@
 #define LED_BLINK_MS          50U
 #define BYTE_MASK             0xFFU
 #define BITS_PER_BYTE         8U
-
-/* USER CODE END PTD */
-
-/* Private define ------------------------------------------------------------*/
-/* USER CODE BEGIN PD */
-
 /* USER CODE END PD */
 
 /* Private macro -------------------------------------------------------------*/
@@ -85,7 +84,7 @@ static HAL_StatusTypeDef glue_canSend(uint32_t id, const uint8_t *data, uint32_t
 }
 
 /*
- * stores the 32-bit vlue in the buffer
+ * stores the 32-bit value in the buffer
  */
 static void util_putU32(uint8_t *buffer, uint32_t value)
 {
@@ -156,32 +155,32 @@ int main(void)
   MX_GPIO_Init();
   MX_FDCAN1_Init();
   /* USER CODE BEGIN 2 */
-  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);
-  FDCAN_FilterTypeDef filter = {0};
-    filter.IdType = FDCAN_STANDARD_ID;
-    filter.FilterIndex = 0U;
-    filter.FilterType = FDCAN_FILTER_RANGE;
-    filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
-    filter.FilterID1 = 0x000U;
-    filter.FilterID2 = CAN_STD_ID_MAX;
-    if (HAL_FDCAN_ConfigFilter(&hfdcan1, &filter) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    if (HAL_FDCAN_ConfigGlobalFilter(&hfdcan1, FDCAN_REJECT, FDCAN_REJECT,
-                                     FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0U) != HAL_OK)
-    {
-      Error_Handler();
-    }
-    if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
-    {
-      Error_Handler();
-    }
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_10, GPIO_PIN_RESET);  /* LBK low = normal mode */
 
+  FDCAN_FilterTypeDef filter = {0};
+  filter.IdType = FDCAN_STANDARD_ID;
+  filter.FilterIndex = 0U;
+  filter.FilterType = FDCAN_FILTER_RANGE;
+  filter.FilterConfig = FDCAN_FILTER_TO_RXFIFO0;
+  filter.FilterID1 = 0x000U;
+  filter.FilterID2 = CAN_STD_ID_MAX;
+  if (HAL_FDCAN_ConfigFilter(&hfdcan1, &filter) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_FDCAN_ConfigGlobalFilter(&hfdcan1, FDCAN_REJECT, FDCAN_REJECT,
+                                   FDCAN_REJECT_REMOTE, FDCAN_REJECT_REMOTE) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_FDCAN_ActivateNotification(&hfdcan1, FDCAN_IT_RX_FIFO0_NEW_MESSAGE, 0U) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  if (HAL_FDCAN_Start(&hfdcan1) != HAL_OK)
+  {
+    Error_Handler();
+  }
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -191,6 +190,24 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
+    uint32_t now = HAL_GetTick();
+
+    /* turn the LED off after LED_BLINK_MS */
+    if ((appl_ledOffTick != 0U) && ((int32_t)(now - appl_ledOffTick) >= 0))
+    {
+      HAL_GPIO_WritePin(LED_GPIO_Port, LED_Pin, GPIO_PIN_RESET);
+      appl_ledOffTick = 0U;
+    }
+
+    /* heartbeat: [received frames u32][uptime ms u32] */
+    if ((now - appl_lastHeartbeatTick) >= HEARTBEAT_PERIOD_MS)
+    {
+      uint8_t heartbeat[CAN_CLASSIC_MAX_LEN];
+      appl_lastHeartbeatTick = now;
+      util_putU32(&heartbeat[0], appl_rxCount);
+      util_putU32(&heartbeat[sizeof(uint32_t)], now);
+      (void)glue_canSend(CAN_ID_HEARTBEAT, heartbeat, CAN_CLASSIC_MAX_LEN);
+    }
   }
   /* USER CODE END 3 */
 }
